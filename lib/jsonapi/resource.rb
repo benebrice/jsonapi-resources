@@ -180,8 +180,18 @@ module JSONAPI
     private
 
     def save
-      run_callbacks :save do
-        _save
+      begin
+        run_callbacks :save do
+          _save
+        end
+      rescue ActiveRecord::RecordNotUnique => e
+        ActiveRecord::Base.connection.execute 'ROLLBACK'
+        # This works for PGSQL
+        e.message.scan(/\(.*\)=\(.*\)/).each do |vals|
+          attr, value = vals.gsub(/(\(|\))/,'').split('=')
+          @model.errors.add(attr, 'has already been taken')
+        end
+        fail JSONAPI::Exceptions::ValidationErrors.new(self, code: 409)
       end
     end
 
